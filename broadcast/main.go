@@ -16,7 +16,8 @@ type BroadcastMessage struct {
 }
 
 func main() {
-	var messages sync.Map
+	var messageLock sync.Mutex
+	messages := map[int]bool{}
 	topology := map[string]map[string]bool{}
 
 	n := maelstrom.NewNode()
@@ -41,8 +42,10 @@ func main() {
 			return err
 		}
 
-		_, seen := messages.Load(body.Message)
-		messages.Store(body.Message, true)
+		messageLock.Lock()
+		_, seen := messages[body.Message]
+		messages[body.Message] = true
+		messageLock.Unlock()
 
 		// If we haven't seen it before, forward it along
 		if !seen {
@@ -58,10 +61,12 @@ func main() {
 
 	n.Handle("read", func(msg maelstrom.Message) error {
 		var vals []int
-		messages.Range(func(k, v interface{}) bool {
-			vals = append(vals, k.(int))
-			return true
-		})
+
+		messageLock.Lock()
+		for m := range messages {
+			vals = append(vals, m)
+		}
+		messageLock.Unlock()
 
 		return n.Reply(msg, map[string]interface{}{
 			"type":     "read_ok",
